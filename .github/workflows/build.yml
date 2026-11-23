@@ -1,0 +1,120 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_commit:
+        description: Immutable FFmpeg commit (defaults to release-9.1-fongmi)
+        required: false
+        type: string
+      libplacebo_commit:
+        description: Immutable libplacebo commit (defaults to fongmi)
+        required: false
+        type: string
+      mpv_ref:
+        description: mpv branch, tag, or commit to build
+        required: true
+        default: fongmi
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FFMPEG_GIT_COMMIT: ${{ inputs.ffmpeg_commit || '' }}
+  LIBPLACEBO_GIT_COMMIT: ${{ inputs.libplacebo_commit || '' }}
+  MPV_GIT_URL: https://github.com/FongMi/mpv.git
+  MPV_GIT_REF: fongmi
+  MPV_ANDROID_ARCHES: armv7l arm64
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Checkout mpv source
+        uses: actions/checkout@v7
+        with:
+          repository: FongMi/mpv
+          ref: ${{ inputs.mpv_ref || 'fongmi' }}
+          path: buildscripts/deps/mpv
+          persist-credentials: false
+      - name: Record mpv source revision
+        run: |
+          printf 'mpv source: `%s`\n' "$(git -C buildscripts/deps/mpv rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Export env vars
+        run: buildscripts/include/ci.sh export >>$GITHUB_ENV
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/mpv-android-base-cache/
+          key: "${{ env.CACHE_IDENTIFIER }}"
+          enableCrossOsArchive: true
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/mpv-android-libplacebo-cache/
+          key: "${{ env.LIBPLACEBO_CACHE_IDENTIFIER }}"
+          enableCrossOsArchive: true
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install autoconf pkgconf libtool ninja-build cmake python3-pip gperf nasm patch ant
+          sudo pip3 install meson
+
+      - name: Download or build deps
+        run: |
+          mkdir -p "$CACHE_FOLDER" "$LIBPLACEBO_CACHE_FOLDER"
+          buildscripts/include/ci.sh install
+        env:
+          CACHE_MODE: "folder"
+          CACHE_FOLDER: "${{ runner.temp }}/mpv-android-base-cache"
+          LIBPLACEBO_CACHE_FOLDER: "${{ runner.temp }}/mpv-android-libplacebo-cache"
+
+      - name: Build native libraries
+        env:
+          MPV_ANDROID_NATIVE_ONLY: "1"
+        run: |
+          buildscripts/include/ci.sh build
+
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '8'
+          distribution: temurin
+
+      - name: Build matching BD-J jars
+        run: bash buildscripts/build-bdj-jars.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libbluray-bdj
+          path: |
+            buildscripts/build/bdj/libbluray-*.jar
+            buildscripts/prefix/arm64/lib/libbluray.a
+            buildscripts/prefix/armv7l/lib/libbluray.a
+            buildscripts/prefix/arm64/lib/libfreetype.a
+            buildscripts/prefix/armv7l/lib/libfreetype.a
+          if-no-files-found: error
+
+      - name: Export renderer SDK
+        run: buildscripts/export-renderer-sdk.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mpv-android-fongmi
+          path: app/src/main/libs/**/*.so
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mpv-android-renderer-sdk
+          path: build/renderer-sdk/**
+          if-no-files-found: error
