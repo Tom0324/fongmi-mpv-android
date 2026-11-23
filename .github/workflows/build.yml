@@ -14,7 +14,7 @@ on:
       mpv_ref:
         description: mpv branch, tag, or commit to build
         required: true
-        default: fongmi
+        default: avcfix
         type: string
 
 permissions:
@@ -23,8 +23,8 @@ permissions:
 env:
   FFMPEG_GIT_COMMIT: ${{ inputs.ffmpeg_commit || '' }}
   LIBPLACEBO_GIT_COMMIT: ${{ inputs.libplacebo_commit || '' }}
-  MPV_GIT_URL: https://github.com/FongMi/mpv.git
-  MPV_GIT_REF: fongmi
+  MPV_GIT_URL: https://github.com/Tom0324/mpv-fongmi.git
+  MPV_GIT_REF: avcfix
   MPV_ANDROID_ARCHES: armv7l arm64
 
 jobs:
@@ -37,8 +37,8 @@ jobs:
       - name: Checkout mpv source
         uses: actions/checkout@v7
         with:
-          repository: FongMi/mpv
-          ref: ${{ inputs.mpv_ref || 'fongmi' }}
+          repository: Tom0324/mpv-fongmi
+          ref: ${{ inputs.mpv_ref || 'avcfix' }}
           path: buildscripts/deps/mpv
           persist-credentials: false
       - name: Record mpv source revision
